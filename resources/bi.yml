@@ -1,0 +1,30 @@
+# AI/BI dashboard + Genie space.
+# Both run on the fleet-demo-wh warehouse (billed with component=bi) and query as the
+# viewer, so Unity Catalog ABAC applies: each person sees only the rows/columns they may see.
+
+resources:
+  dashboards:
+    fleet_health_dashboard:
+      display_name: Fleet Health
+      file_path: ../src/dashboards/fleet_health.lvdash.json
+      warehouse_id: ${resources.sql_warehouses.fleet_wh.id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: gold
+      embed_credentials: false   # run queries as the viewer → ABAC per viewer
+      permissions:
+        - group_name: fleet_north_dealers
+          level: CAN_RUN
+        - group_name: fleet_service_admins
+          level: CAN_RUN
+
+  genie_spaces:
+    fleet_health_genie:
+      title: Fleet Health Assistant
+      description: Ask questions about excavator health, faults, regions and dealers.
+      warehouse_id: ${resources.sql_warehouses.fleet_wh.id}
+      file_path: ../src/genie/fleet_health.geniespace.json
+      permissions:
+        - group_name: fleet_north_dealers
+          level: CAN_RUN
+        - group_name: fleet_service_admins
+          level: CAN_RUN

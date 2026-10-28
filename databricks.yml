@@ -1,0 +1,50 @@
+# Fleet Health & Service demo
+# One bundle deploys every Databricks resource in the demo.
+
+bundle:
+  name: fleet-demo
+
+include:
+  - resources/*.yml
+
+# Demo-delivery material stays local; it is not uploaded to the workspace.
+sync:
+  exclude:
+    - internal/**
+
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds all demo data
+    default: fleet_demo
+  rds_host:
+    description: RDS PostgreSQL endpoint (operational fleet database)
+    default: fleet-db.cef2p5pct3ha.us-east-2.rds.amazonaws.com
+  rds_connection:
+    description: UC connection to the RDS fleet database
+    default: fleet_rds
+  agent_sp_application_id:
+    description: Application ID of fleet-agent-sp, the identity the agent endpoint uses
+    default: 0e97c97a-0f1d-4353-a5ad-e7215b129534
+  performance_target:
+    description: >
+      Serverless mode for the e2e job (and the pipelines it triggers).
+      PERFORMANCE_OPTIMIZED = fast start for live demos; STANDARD = cheaper, ~4-6 min startup per task.
+    default: PERFORMANCE_OPTIMIZED
+  usage_policy_id:
+    description: >
+      ID of the serverless usage policy "fleet-demo" (created once in the UI).
+      Attached to every serverless resource so its spend carries the demo tags.
+    default: 227ddc41-556d-472b-8958-e51a5fc01c04
+
+targets:
+  dev:
+    default: true
+    workspace:
+      profile: ir-demo
+      host: https://fe-sandbox-ir-demo.cloud.databricks.com   # explicit so ${workspace.host} resolves
+    presets:
+      # Bundle-wide tags, added to every resource that supports tags (jobs, pipelines, ...)
+      tags:
+        project: fleet-l100
+        customer: demo-customer
+        env: demo

@@ -1,0 +1,9 @@
+.databricks/
+.vscode/
+__pycache__/
+.venv/
+node_modules/
+.DS_Store
+
+# Demo-delivery material: kept local, not published
+internal/

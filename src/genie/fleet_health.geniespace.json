@@ -1,0 +1,144 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {
+        "id": "a0000000000000000000000000000001",
+        "question": [
+          "Which machines are in Critical condition and who owns them?"
+        ]
+      },
+      {
+        "id": "a0000000000000000000000000000002",
+        "question": [
+          "What percentage of machines are healthy in each region?"
+        ]
+      },
+      {
+        "id": "a0000000000000000000000000000003",
+        "question": [
+          "Which dealer has the most fault events?"
+        ]
+      },
+      {
+        "id": "a0000000000000000000000000000004",
+        "question": [
+          "Show machines with hydraulic temperature above 85 \u00b0C"
+        ]
+      },
+      {
+        "id": "a0000000000000000000000000000005",
+        "question": [
+          "Which model has the highest average hydraulic temperature?"
+        ]
+      }
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {
+        "identifier": "fleet_demo.gold.machine_health",
+        "description": [
+          "One row per excavator: latest condition, health status, region, dealer and owning customer."
+        ],
+        "column_configs": [
+          {
+            "column_name": "customer_name",
+            "synonyms": [
+              "customer",
+              "owner"
+            ]
+          },
+          {
+            "column_name": "dealer",
+            "enable_format_assistance": true,
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "fault_count",
+            "synonyms": [
+              "faults",
+              "fault events",
+              "alarms"
+            ]
+          },
+          {
+            "column_name": "health_status",
+            "description": [
+              "Healthy, Watch or Critical"
+            ],
+            "enable_format_assistance": true,
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "last_hydraulic_temp_c",
+            "description": [
+              "Hydraulic oil temperature in \u00b0C at the latest reading"
+            ],
+            "synonyms": [
+              "temperature",
+              "hydraulic temp",
+              "temp"
+            ]
+          },
+          {
+            "column_name": "model",
+            "description": [
+              "Excavator model, e.g. XC 200, XC 220 Pro"
+            ],
+            "enable_format_assistance": true,
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "region",
+            "description": [
+              "Sales region: North, South, East, West"
+            ],
+            "enable_format_assistance": true,
+            "enable_entity_matching": true
+          }
+        ]
+      },
+      {
+        "identifier": "fleet_demo.gold.region_summary",
+        "description": [
+          "Fleet health per region: machine count, healthy/watch/critical counts, % healthy, total faults."
+        ]
+      }
+    ]
+  },
+  "instructions": {
+    "text_instructions": [
+      {
+        "id": "c0000000000000000000000000000001",
+        "content": [
+          "You answer questions about the health of an excavator fleet for service and dealer teams.\n",
+          "health_status rules: Critical = latest hydraulic temperature above 95 \u00b0C; Watch = above 80 \u00b0C or 2+ fault events; otherwise Healthy.\n",
+          "Use region_summary for region-level questions and machine_health for machine, dealer, model or customer questions.\n",
+          "Customer name and phone may appear as **** \u2014 that is data masking by access policy; say so instead of treating it as missing data.\n",
+          "Temperatures are in \u00b0C."
+        ]
+      }
+    ],
+    "example_question_sqls": [
+      {
+        "id": "b0000000000000000000000000000001",
+        "question": [
+          "Which machines need attention?"
+        ],
+        "sql": [
+          "SELECT machine_id, health_status, region, dealer, last_hydraulic_temp_c, fault_count FROM fleet_demo.gold.machine_health WHERE health_status IN ('Critical', 'Watch') ORDER BY CASE health_status WHEN 'Critical' THEN 1 ELSE 2 END, last_hydraulic_temp_c DESC"
+        ]
+      },
+      {
+        "id": "b0000000000000000000000000000002",
+        "question": [
+          "How healthy is each region?"
+        ],
+        "sql": [
+          "SELECT region, machines, healthy, watch, critical, pct_healthy FROM fleet_demo.gold.region_summary ORDER BY pct_healthy"
+        ]
+      }
+    ]
+  }
+}

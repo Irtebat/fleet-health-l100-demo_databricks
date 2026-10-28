@@ -1,0 +1,889 @@
+{
+  "datasets": [
+    {
+      "name": "ds_fleet",
+      "displayName": "Fleet health",
+      "queryLines": [
+        "SELECT machine_id, model, region, dealer, customer_name, phone, health_status, ",
+        "CASE health_status WHEN 'Critical' THEN 1 WHEN 'Watch' THEN 2 ELSE 3 END AS status_rank, ",
+        "CASE WHEN health_status = 'Healthy' THEN 1 ELSE 0 END AS is_healthy, ",
+        "CASE WHEN health_status = 'Critical' THEN 1 ELSE 0 END AS is_critical, ",
+        "last_hydraulic_temp_c, avg_hydraulic_temp_c, fault_count, last_reading_at ",
+        "FROM machine_health ",
+        "ORDER BY status_rank, last_hydraulic_temp_c DESC "
+      ]
+    },
+    {
+      "name": "ds_cost",
+      "displayName": "Demo cost",
+      "queryLines": [
+        "WITH pipelines AS ( ",
+        "  SELECT pipeline_id, max_by(name, change_time) AS pipeline_name FROM system.lakeflow.pipelines GROUP BY pipeline_id ",
+        ") ",
+        "SELECT u.usage_date, u.billing_origin_product AS product, ",
+        "  COALESCE(u.custom_tags['component'], p.pipeline_name, u.billing_origin_product) AS component, ",
+        "  u.usage_quantity AS dbus, ",
+        "  COALESCE(u.usage_quantity * lp.pricing.effective_list.default, 0) AS list_cost_usd ",
+        "FROM system.billing.usage u ",
+        "LEFT JOIN pipelines p ON u.usage_metadata.dlt_pipeline_id = p.pipeline_id ",
+        "LEFT JOIN system.billing.list_prices lp ON u.sku_name = lp.sku_name ",
+        "  AND u.usage_start_time >= lp.price_start_time ",
+        "  AND (lp.price_end_time IS NULL OR u.usage_start_time < lp.price_end_time) ",
+        "WHERE u.custom_tags['project'] = 'fleet-l100' ",
+        "  AND u.usage_date BETWEEN :date_range.min AND :date_range.max "
+      ],
+      "parameters": [
+        {
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          },
+          "displayName": "Usage date"
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "fleet",
+      "displayName": "Fleet",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "fleet-title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Fleet Health\n",
+                "\n",
+                "Excavator condition from telemetry + machine master data. Data you see depends on who you are (Unity Catalog ABAC)."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-machines",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_fleet",
+                  "fields": [
+                    {
+                      "name": "count(machine_id)",
+                      "expression": "COUNT(`machine_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(machine_id)",
+                  "displayName": "Machines"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Machines"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-healthy",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_fleet",
+                  "fields": [
+                    {
+                      "name": "avg(is_healthy)",
+                      "expression": "AVG(`is_healthy`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(is_healthy)",
+                  "displayName": "Healthy",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 0
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Healthy"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-critical",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_fleet",
+                  "fields": [
+                    {
+                      "name": "sum(is_critical)",
+                      "expression": "SUM(`is_critical`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(is_critical)",
+                  "displayName": "Critical"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Critical",
+                "description": "Hydraulic temp > 95 \u00b0C",
+                "showDescription": true
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-faults",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_fleet",
+                  "fields": [
+                    {
+                      "name": "sum(fault_count)",
+                      "expression": "SUM(`fault_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(fault_count)",
+                  "displayName": "Fault events"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Fault events"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "health-by-region",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_fleet",
+                  "fields": [
+                    {
+                      "name": "region",
+                      "expression": "`region`"
+                    },
+                    {
+                      "name": "health_status",
+                      "expression": "`health_status`"
+                    },
+                    {
+                      "name": "count(machine_id)",
+                      "expression": "COUNT(`machine_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                },
+                "y": {
+                  "fieldName": "count(machine_id)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Machines"
+                },
+                "color": {
+                  "fieldName": "health_status",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Critical",
+                        "color": "#E5533D"
+                      },
+                      {
+                        "value": "Watch",
+                        "color": "#F2A93B"
+                      },
+                      {
+                        "value": "Healthy",
+                        "color": "#2E9E8F"
+                      }
+                    ]
+                  },
+                  "displayName": "Health"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Machine health by region"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "faults-by-region",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_fleet",
+                  "fields": [
+                    {
+                      "name": "region",
+                      "expression": "`region`"
+                    },
+                    {
+                      "name": "sum(fault_count)",
+                      "expression": "SUM(`fault_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                },
+                "y": {
+                  "fieldName": "sum(fault_count)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Fault events"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Fault events by region"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "machines-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_fleet",
+                  "fields": [
+                    {
+                      "name": "machine_id",
+                      "expression": "`machine_id`"
+                    },
+                    {
+                      "name": "health_status",
+                      "expression": "`health_status`"
+                    },
+                    {
+                      "name": "region",
+                      "expression": "`region`"
+                    },
+                    {
+                      "name": "dealer",
+                      "expression": "`dealer`"
+                    },
+                    {
+                      "name": "model",
+                      "expression": "`model`"
+                    },
+                    {
+                      "name": "customer_name",
+                      "expression": "`customer_name`"
+                    },
+                    {
+                      "name": "phone",
+                      "expression": "`phone`"
+                    },
+                    {
+                      "name": "last_hydraulic_temp_c",
+                      "expression": "`last_hydraulic_temp_c`"
+                    },
+                    {
+                      "name": "fault_count",
+                      "expression": "`fault_count`"
+                    },
+                    {
+                      "name": "last_reading_at",
+                      "expression": "`last_reading_at`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "machine_id",
+                    "displayName": "Machine"
+                  },
+                  {
+                    "fieldName": "health_status",
+                    "displayName": "Health"
+                  },
+                  {
+                    "fieldName": "region",
+                    "displayName": "Region"
+                  },
+                  {
+                    "fieldName": "dealer",
+                    "displayName": "Dealer"
+                  },
+                  {
+                    "fieldName": "model",
+                    "displayName": "Model"
+                  },
+                  {
+                    "fieldName": "customer_name",
+                    "displayName": "Customer"
+                  },
+                  {
+                    "fieldName": "phone",
+                    "displayName": "Phone"
+                  },
+                  {
+                    "fieldName": "last_hydraulic_temp_c",
+                    "displayName": "Last hydraulic temp (\u00b0C)"
+                  },
+                  {
+                    "fieldName": "fault_count",
+                    "displayName": "Faults"
+                  },
+                  {
+                    "fieldName": "last_reading_at",
+                    "displayName": "Last reading"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Machines (most urgent first)",
+                "description": "Customer and phone are masked unless you are a service admin",
+                "showDescription": true
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 7
+          }
+        }
+      ]
+    },
+    {
+      "name": "cost",
+      "displayName": "Cost",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "cost-title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Demo cost attribution\n",
+                "\n",
+                "All usage tagged `project=fleet-l100` by the `fleet-demo` serverless usage policy. Jobs and the warehouse add a `component` tag; pipelines are identified by pipeline ID. List prices \u2014 not your actual contract rates."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 8,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "cost-date-filter",
+            "queries": [
+              {
+                "name": "q_cost",
+                "query": {
+                  "datasetName": "ds_cost",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "q_cost"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Usage date",
+                "description": "Defaults to today; billing data can lag a few hours",
+                "showDescription": true
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-dbus",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cost",
+                  "fields": [
+                    {
+                      "name": "sum(dbus)",
+                      "expression": "SUM(`dbus`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(dbus)",
+                  "displayName": "DBUs",
+                  "format": {
+                    "type": "number",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total DBUs"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cost",
+                  "fields": [
+                    {
+                      "name": "sum(list_cost_usd)",
+                      "expression": "SUM(`list_cost_usd`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(list_cost_usd)",
+                  "displayName": "List cost",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Estimated list cost",
+                "description": "Lakeflow Connect free usage counts as $0",
+                "showDescription": true
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "dbus-over-time",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cost",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "component",
+                      "expression": "`component`"
+                    },
+                    {
+                      "name": "sum(dbus)",
+                      "expression": "SUM(`dbus`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Date"
+                },
+                "y": {
+                  "fieldName": "sum(dbus)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "DBUs"
+                },
+                "color": {
+                  "fieldName": "component",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Component"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "DBUs per day by component"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "cost-by-component",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cost",
+                  "fields": [
+                    {
+                      "name": "component",
+                      "expression": "`component`"
+                    },
+                    {
+                      "name": "sum(list_cost_usd)",
+                      "expression": "SUM(`list_cost_usd`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(list_cost_usd)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "List cost (USD)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "component",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Component"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "List cost by component"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "dbus-by-product",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cost",
+                  "fields": [
+                    {
+                      "name": "product",
+                      "expression": "`product`"
+                    },
+                    {
+                      "name": "sum(dbus)",
+                      "expression": "SUM(`dbus`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(dbus)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "DBUs"
+                },
+                "y": {
+                  "fieldName": "product",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Product"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "DBUs by billing product"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 11,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {
+        "light": "#F9F7F4",
+        "dark": "#0B2026"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#11272E"
+      },
+      "widgetBorderColor": {
+        "light": "#FFFFFF",
+        "dark": "#11272E"
+      },
+      "fontColor": {
+        "light": "#0B2026",
+        "dark": "#E8ECF0"
+      },
+      "selectionColor": {
+        "light": "#2272B4",
+        "dark": "#8ACAFF"
+      },
+      "visualizationColors": [
+        "#1D425C",
+        "#2E9E8F",
+        "#F2A93B",
+        "#4A8CC7",
+        "#995495",
+        "#FF7054",
+        "#99DDB4"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "genieSpace": {
+      "isEnabled": true,
+      "overrideId": "01f1d1f54d471c10a9af09f4295a8934",
+      "enablementMode": "ENABLED"
+    }
+  }
+}

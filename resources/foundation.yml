@@ -1,0 +1,70 @@
+# Foundation: medallion schemas, landing volume, SQL warehouse.
+# The catalog itself is created once in the UI: this metastore uses Default Storage,
+# which the API/bundle can't provision.
+
+resources:
+  schemas:
+    landing:
+      catalog_name: ${var.catalog}
+      name: landing
+      comment: Raw files dropped by the telemetry generator
+    bronze:
+      catalog_name: ${var.catalog}
+      name: bronze
+      comment: Raw data as ingested (Auto Loader + Lakeflow Connect)
+    silver:
+      catalog_name: ${var.catalog}
+      name: silver
+      comment: Cleaned, validated data
+    gold:
+      catalog_name: ${var.catalog}
+      name: gold
+      comment: Business-ready tables for dashboard, Genie, Lakebase and the agent
+    secrets:
+      catalog_name: ${var.catalog}
+      name: secrets
+      comment: UC secrets (e.g. RDS connector password)
+    governance:
+      catalog_name: ${var.catalog}
+      name: governance
+      comment: ABAC masking and row-filter functions
+    ai:
+      catalog_name: ${var.catalog}
+      name: ai
+      comment: Agent tools (UC functions), Unity Gateway model service, agent model
+
+  volumes:
+    telemetry:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.landing.name}
+      name: telemetry
+      comment: Excavator telemetry JSON files (read by Auto Loader)
+
+  sql_warehouses:
+    fleet_wh:
+      name: fleet-demo-wh
+      cluster_size: 2X-Small
+      min_num_clusters: 1
+      max_num_clusters: 1
+      auto_stop_mins: 10
+      enable_serverless_compute: true
+      warehouse_type: PRO
+      # Usage policies don't cover SQL warehouses, so the warehouse carries its own tags.
+      # Dashboard and Genie queries run here and are billed with these tags.
+      permissions:
+        - group_name: fleet_north_dealers
+          level: CAN_USE
+        - group_name: fleet_service_admins
+          level: CAN_USE
+        - service_principal_name: ${var.agent_sp_application_id}   # agent tools run SQL here
+          level: CAN_USE
+      tags:
+        custom_tags:
+          - key: project
+            value: fleet-l100
+          - key: customer
+            value: demo-customer
+          - key: env
+            value: demo
+          - key: component
+            value: bi

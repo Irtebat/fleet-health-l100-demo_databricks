@@ -1,0 +1,118 @@
+# Unity Gateway model service + fleet agent on Model Serving.
+#
+# Order on first setup (endpoint needs a registered model version):
+#   1. deploy (model service, tools job) → 2. run fleet-agent-build → 3. deploy again (endpoint)
+# Guardrails (service policies, Beta) and budgets are configured in the UI: see docs/agent-governance.md.
+#
+# Identity: the endpoint calls the model service, warehouse and UC functions as the service principal
+# fleet-agent-sp (OAuth M2M). Model Serving's automatic credentials don't cover UC model services yet.
+# One-time: store its OAuth secret in the secret scope (see docs/agent-governance.md).
+
+variables:
+  agent_version:
+    description: Registered version of fleet_demo.ai.fleet_agent served by the endpoint
+    default: "5"
+
+resources:
+  # Governed LLM access point (a Unity Catalog securable): fleet_demo.ai.fleet_llm
+  model_services:
+    fleet_llm:
+      parent: schemas/${var.catalog}.ai
+      model_service_id: fleet_llm
+      comment: Fleet assistant LLM — Claude Sonnet with Haiku fallback
+      config:
+        routing:
+          destinations:
+            - name: claude-sonnet
+              destination_type: DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL
+              pay_per_token_config:
+                model: models/system.ai.databricks-claude-sonnet-5-5
+              traffic_percentage: 100
+          fallback:             # tried in order if the primary fails
+            destinations:
+              - name: claude-haiku
+                destination_type: DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL
+                pay_per_token_config:
+                  model: models/system.ai.databricks-claude-haiku-5-5
+        rate_limits:
+          - key: RATE_LIMIT_KEY_SERVICE          # whole service
+            renewal_period: RATE_LIMIT_RENEWAL_PERIOD_MINUTE
+            requests: 60
+          - key: RATE_LIMIT_KEY_USER_DEFAULT     # each caller
+            renewal_period: RATE_LIMIT_RENEWAL_PERIOD_MINUTE
+            requests: 20
+            tokens: 50000
+        inference_table:                         # every request/response logged to UC
+          parent: schemas/${var.catalog}.ai
+          table_name_prefix: fleet_llm           # → fleet_demo.ai.fleet_llm_payload
+      grants:
+        - principal: fleet_service_admins
+          privileges: [EXECUTE]
+        - principal: ${var.agent_sp_application_id}   # the agent endpoint's identity
+          privileges: [EXECUTE]
+
+  secret_scopes:
+    fleet_agent_secrets:
+      name: fleet-agent-secrets     # holds client_secret of fleet-agent-sp
+
+  experiments:
+    fleet_agent_experiment:
+      name: /Users/${workspace.current_user.userName}/fleet-agent
+
+  jobs:
+    fleet_agent_build:
+      name: fleet-agent-build
+      usage_policy_id: ${var.usage_policy_id}
+      tags:
+        component: agent-build
+      performance_target: STANDARD
+      environments:
+        - environment_key: agent
+          spec:
+            environment_version: "4"
+            dependencies:
+              - mlflow>=3.17
+              - databricks-sdk
+              - openai
+      tasks:
+        - task_key: create_tools        # UC functions (SQL on the warehouse)
+          sql_task:
+            warehouse_id: ${resources.sql_warehouses.fleet_wh.id}
+            file:
+              path: ../src/agent/tools.sql
+        - task_key: test_and_register   # test once, log + register to UC
+          depends_on:
+            - task_key: create_tools
+          environment_key: agent
+          spark_python_task:
+            python_file: ../src/agent/log_agent.py
+            parameters:
+              - ${workspace.file_path}/src/agent/agent.py
+              - ${resources.experiments.fleet_agent_experiment.name}
+              - ${var.catalog}
+
+  model_serving_endpoints:
+    fleet_agent:
+      name: fleet-agent
+      # Cost attribution: endpoint compute billed with the usage policy + tags
+      budget_policy_id: ${var.usage_policy_id}
+      tags:
+        - key: component
+          value: agent
+      config:
+        served_entities:
+          - entity_name: ${var.catalog}.ai.fleet_agent
+            entity_version: ${var.agent_version}
+            workload_size: Small
+            scale_to_zero_enabled: true
+            environment_vars:
+              AGENT_HOST: ${workspace.host}
+              AGENT_CLIENT_ID: ${var.agent_sp_application_id}
+              AGENT_CLIENT_SECRET: "{{secrets/fleet-agent-secrets/client_secret}}"   # resolved by Model Serving at startup
+              ENABLE_MLFLOW_TRACING: "true"     # traces of every request → the experiment
+              MLFLOW_EXPERIMENT_ID: ${resources.experiments.fleet_agent_experiment.id}
+      permissions:   # the bundle owns this ACL: everyone who queries the agent must be listed here
+        - group_name: fleet_service_admins
+          level: CAN_QUERY
+        - service_principal_name: ${resources.apps.fleet_app.service_principal_client_id}   # the app's Assistant tab
+          level: CAN_QUERY

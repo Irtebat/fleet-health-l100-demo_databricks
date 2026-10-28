@@ -1,0 +1,105 @@
+@import "@databricks/appkit-ui/styles.css";
+
+/* Style: ledger (ui-ledger)
+   Theme tokens for the Ledger design (Tailwind v4 + shadcn-style token names).
+   Import after your component library styles, e.g. @import "@databricks/appkit-ui/styles.css"; */
+
+/* Dark mode follows the theme toggle (the .dark class), not only the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "DM Mono", ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Warm off-white page, white cards, ink text and buttons, brand colour only as a thin accent.
+   To re-brand, change --brand and the --ring colour to match. */
+:root,
+:root.light {
+  color-scheme: light;
+  --radius: 0.625rem;
+  --background: #f9f7f4;
+  --foreground: #0b2026;
+  --card: #ffffff;
+  --card-foreground: #0b2026;
+  --popover: #ffffff;
+  --popover-foreground: #0b2026;
+  --primary: #0b2026;
+  --primary-foreground: #ffffff;
+  --secondary: #f0eeea;
+  --secondary-foreground: #0b2026;
+  --muted: #f0eeea;
+  --muted-foreground: #5f6b70;
+  --accent: #f0eeea;
+  --accent-foreground: #0b2026;
+  --destructive: #e40014;
+  --destructive-foreground: #ffffff;
+  --success: #009871;
+  --success-foreground: #ffffff;
+  --warning: #f2ae24;
+  --warning-foreground: #091821;
+  --border: #e4e2dd;
+  --input: #e4e2dd;
+  --ring: rgb(255 54 33 / 0.45); /* --brand at 45% */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0b2026;
+  --sidebar-accent: #f0eeea;
+  --sidebar-accent-foreground: #0b2026;
+  --sidebar-border: #e4e2dd;
+  --brand: #ff3621; /* default accent; swap per product */
+  --brand-foreground: #ffffff;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #18181b;
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+  --primary: #f4f4f5;
+  --primary-foreground: #0b2026;
+  --secondary: #27272a;
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #ff6568;
+  --border: #ffffff1a;
+  --input: #ffffff26;
+  --ring: rgb(255 54 33 / 0.55); /* --brand at 55% */
+  --sidebar: #111113;
+  --sidebar-foreground: #fafafa;
+  --sidebar-accent: #27272a;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #ffffff1a;
+}
+
+/* Expose the accent as Tailwind utilities (bg-brand, text-brand, border-brand). */
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+  }
+  /* Thinner icon strokes. */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+}
+
+/* Counts and scores: tabular figures in the UI face (DM Mono's slashed zero reads as "Ø"). */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ids, dates, times and code. */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

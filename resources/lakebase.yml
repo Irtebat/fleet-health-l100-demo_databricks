@@ -1,0 +1,41 @@
+# Lakebase (serverless Postgres) for the app.
+# Gold data is synced from Delta into Postgres for low-latency app reads; the app's own
+# CRUD table (service_tickets) is created by the app itself so its service principal owns it.
+
+resources:
+  postgres_projects:
+    fleet_health:
+      project_id: fleet-health
+      display_name: Fleet Health (demo)
+      pg_version: 17
+      default_endpoint_settings:
+        autoscaling_limit_min_cu: 0.5
+        autoscaling_limit_max_cu: 1
+        suspend_timeout_duration: 300s   # scale to zero after 5 idle minutes
+      # Cost attribution: Lakebase compute/storage carry the usage policy + these tags
+      budget_policy_id: ${var.usage_policy_id}
+      custom_tags:
+        - key: component
+          value: lakebase
+
+  # Registers the Lakebase database in Unity Catalog as a catalog: every Postgres table
+  # (synced or app-owned, e.g. service_tickets) becomes browsable/queryable from Databricks SQL.
+  postgres_catalogs:
+    fleet_lakebase:
+      catalog_id: fleet_lakebase
+      branch: projects/${resources.postgres_projects.fleet_health.project_id}/branches/production
+      postgres_database: databricks_postgres
+
+  postgres_synced_tables:
+    machine_health:
+      # UC name of the synced table → Postgres table serving.machine_health
+      synced_table_id: ${resources.postgres_catalogs.fleet_lakebase.catalog_id}.serving.machine_health
+      source_table_full_name: ${var.catalog}.gold.machine_health
+      branch: projects/${resources.postgres_projects.fleet_health.project_id}/branches/production  # reference → created after the project
+      postgres_database: databricks_postgres
+      primary_key_columns: [machine_id]
+      scheduling_policy: SNAPSHOT   # source is a materialized view; full copy on each sync (50 rows)
+      new_pipeline_spec:
+        storage_catalog: ${var.catalog}   # sync pipeline checkpoints/event log (regular UC catalog)
+        storage_schema: bronze
+        budget_policy_id: ${var.usage_policy_id}

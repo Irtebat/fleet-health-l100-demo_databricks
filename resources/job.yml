@@ -1,0 +1,50 @@
+# Lakeflow Job that runs the whole demo end to end.
+# Data generation + RDS ingestion → medallion → Lakebase sync + ABAC.
+
+resources:
+  jobs:
+    fleet_e2e:
+      name: fleet-e2e
+      description: Fleet health demo — generate data, ingest, transform
+
+      # Cost attribution: notebook/python tasks run on serverless jobs compute and are billed
+      # (product JOBS) with the usage policy's tags plus the job tags below.
+      # pipeline_task usage is billed to the pipeline; sql_task usage to the SQL warehouse.
+      usage_policy_id: ${var.usage_policy_id}
+      tags:
+        component: e2e-job
+      performance_target: ${var.performance_target}  # demo default: fast start; STANDARD for cheaper runs
+
+      max_concurrent_runs: 1
+
+      tasks:
+        - task_key: generate_telemetry
+          notebook_task:
+            notebook_path: ../src/data_gen/generate_telemetry.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: ingest_rds          # runs in parallel with telemetry generation
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.fleet_rds_ingestion.id}
+
+        - task_key: medallion
+          depends_on:
+            - task_key: generate_telemetry
+            - task_key: ingest_rds
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.fleet_medallion.id}
+
+        - task_key: sync_lakebase       # refresh the Lakebase copy of gold.machine_health
+          depends_on:
+            - task_key: medallion
+          pipeline_task:
+            pipeline_id: ${resources.postgres_synced_tables.machine_health.status.pipeline_id}
+
+        - task_key: apply_abac          # SQL on the warehouse ; Reapplies ABAC policies on refreshed data
+          depends_on:
+            - task_key: medallion
+          sql_task:
+            warehouse_id: ${resources.sql_warehouses.fleet_wh.id}
+            file:
+              path: ../src/governance/abac.sql
